@@ -15,7 +15,7 @@
 
 from tensornetwork import network
 from tensornetwork import network_components
-from typing import Any, Callable, Dict, List, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 # `opt_einsum` algorithm method typing
 Algorithm = Callable[[List[Set[int]], Set[int], Dict[int, int]],
@@ -25,6 +25,14 @@ Algorithm = Callable[[List[Set[int]], Set[int], Dict[int, int]],
 def multi_remove(elems: List[Any], indices: List[int]) -> List[Any]:
   """Remove multiple indicies in a list at once."""
   return [i for j, i in enumerate(elems) if j not in indices]
+
+
+def get_first_nondangling(node: network_components.CopyNode) -> Optional[network_components.Edge]:
+  """Returns the first non-dangling edge of a copy node."""
+  for edge in node.edges:
+    if not edge.is_dangling():
+      return edge
+  return None
 
 
 def get_path(net: network.TensorNetwork, algorithm: Algorithm
@@ -40,9 +48,26 @@ def get_path(net: network.TensorNetwork, algorithm: Algorithm
     The optimal contraction path as returned by `opt_einsum`.
     A list of nodes sorted compatibly with their indices in the path.
   """
-  sorted_nodes = sorted(net.nodes_set, key = lambda n: n.signature)
+  copy_nodes = {node: get_first_nondangling(node) for node in net.node_set
+                if isinstance(node, network_components.CopyNode)}
 
-  input_sets = [set(node.edges) for node in sorted_nodes]
+  sorted_nodes = sorted(net.node_set - set(copy_nodes.keys()),
+                        key = lambda n: n.signature)
+
+  if copy_nodes:
+    # TODO: Work in progress!
+
+    # Map all non-dangling edges of a copy node to one specific edge.
+    # In `einsum` notation this is equivalent to using a character more
+    # than twice.
+    edge_map = {}
+    for node, edge in copy_nodes.items():
+      edge_map.update({e: edge for e in node.edges})
+    input_sets = [set((edge_map[edge] if edge in edge_map else edge
+                       for edge in node.edges)) for node in sorted_nodes]
+  else:
+    input_sets = [set(node.edges) for node in sorted_nodes]
+
   output_set = net.get_all_edges() - net.get_all_nondangling()
   size_dict = {edge: edge.dimension for edge in net.get_all_edges()}
 
