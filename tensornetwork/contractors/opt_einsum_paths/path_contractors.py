@@ -50,8 +50,30 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
 
   # Then apply `opt_einsum`'s algorithm
   path, nodes = utils.get_path(net, algorithm)
+  node_to_copies = set() # Maps node: set{copy nodes}
+  copy_to_nodes = set() # Maps copy node: set{nodes}
   for a, b in path:
-    new_node = nodes[a] @ nodes[b]
+    # Check if the two nodes share copy nodes
+    #copies_of_a = node_to_copies.pop(nodes[a])
+    #copies_of_b = node_to_copies.pop(nodes[b])
+    #shared_copies = copies_of_a & copies_of_b
+    shared_copies = {}
+    for copy in shared_copies:
+      copy_has_dangling = len(copy.edges) > len(copy.get_all_nondangling())
+      if len(copy_to_nodes[copy]) > 2 or copy_has_dangling:
+        new_node = net.contract_between(nodes[a], nodes[b],
+                                        allow_outer_product=True)
+      else:
+        copies_of_a.pop(copy)
+        copies_of_b.pop(copy)
+        new_node = net.contract_copy_node(copy)
+      # Update maps
+      node_to_copies[new_node] = copies_of_a | copies_of_b
+      copy_to_nodes.pop(copy)
+      for copy2 in node_to_copies[new_node]:
+        copy_to_nodes[copy2].add(new_node)
+    if not shared_copies:
+      new_node = nodes[a] @ nodes[b]
     nodes.append(new_node)
     nodes = utils.multi_remove(nodes, [a, b])
 
