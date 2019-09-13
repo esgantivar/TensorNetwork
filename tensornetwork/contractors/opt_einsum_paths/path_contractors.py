@@ -48,32 +48,35 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
     # There's nothing to contract.
     return net
 
-  # Then apply `opt_einsum`'s algorithm
-  path, nodes = utils.get_path(net, algorithm)
-  node_to_copies = set() # Maps node: set{copy nodes}
-  copy_to_nodes = set() # Maps copy node: set{nodes}
+  copy_neighbors, node_neighbors, edge_map = utils.find_copy_nodes(net)
+  nodes = sorted(net.nodes_set - set(copy_neighbors.keys()),
+                 key = lambda n: n.signature)
+
+  # Apply `opt_einsum`'s algorithm
+  path = utils.get_path(net, algorithm, nodes, edge_map)
   for a, b in path:
     # Check if the two nodes share copy nodes
-    #copies_of_a = node_to_copies.pop(nodes[a])
-    #copies_of_b = node_to_copies.pop(nodes[b])
-    #shared_copies = copies_of_a & copies_of_b
-    shared_copies = {}
+    copies_of_a = node_neighbors.pop(nodes[a])
+    copies_of_b = node_neighbors.pop(nodes[b])
+    shared_copies = copies_of_a & copies_of_b
     for copy in shared_copies:
-      copy_has_dangling = len(copy.edges) > len(copy.get_all_nondangling())
-      if len(copy_to_nodes[copy]) > 2 or copy_has_dangling:
+      has_dangling = len(copy.edges) > len(copy.get_all_nondangling())
+      if len(copy_neighbors[copy]) > 2 or has_dangling:
         new_node = net.contract_between(nodes[a], nodes[b],
                                         allow_outer_product=True)
       else:
         copies_of_a.pop(copy)
         copies_of_b.pop(copy)
+        copy_neighbors.pop(copy)
         new_node = net.contract_copy_node(copy)
-      # Update maps
-      node_to_copies[new_node] = copies_of_a | copies_of_b
-      copy_to_nodes.pop(copy)
-      for copy2 in node_to_copies[new_node]:
-        copy_to_nodes[copy2].add(new_node)
+
+      node_neighbors[new_node] = copies_of_a | copies_of_b
+      for copy2 in node_neighbors[new_node]:
+        copy_neighbors[copy2].add(new_node)
+
     if not shared_copies:
       new_node = nodes[a] @ nodes[b]
+      node_neighbors[new_node] = copies_of_a | copies_of_b
     nodes.append(new_node)
     nodes = utils.multi_remove(nodes, [a, b])
 

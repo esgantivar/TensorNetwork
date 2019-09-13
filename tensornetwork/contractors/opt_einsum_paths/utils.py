@@ -27,17 +27,47 @@ def multi_remove(elems: List[Any], indices: List[int]) -> List[Any]:
   return [i for j, i in enumerate(elems) if j not in indices]
 
 
-def get_first_nondangling(node: network_components.CopyNode) -> Optional[network_components.Edge]:
-  """Returns the first non-dangling edge of a copy node."""
-  for edge in node.edges:
-    if not edge.is_dangling():
-      return edge
-  return None
+
+def find_copy_nodes(net: network.TensorNetwork) -> Tuple[
+    Dict[network_components.CopyNode, network_components.Node],
+    Dict[network_components.Node, network_components.CopyNode],
+    Dict[network_components.Edge, network_components.Edge]]:
+  # TODO: Docstring
+  edge_map = {} # Maps all non-dangling edges of a copy node to a specific
+                # non-dangling edge of this copy node
+  copy_neighbors = {} # Maps nodes to their copy node neighbors
+  node_neighbors = {node: set() for node in net.nodes_set} # Maps copy nodes to their node neighbors
+
+  for copy in net.nodes_set:
+    if isinstance(copy, network_components.CopyNode):
+      node_neighbors.pop(copy)
+      copy_neighbors[copy] = {}
+      representative_edge = None
+      for edge in copy.edges:
+        if not edge.is_dangling():
+
+          # Update `edge_map`
+          if representative_edge is None:
+            representative_edge = edge
+          edge_map[edge] = representative_edge
+
+          # Update `neighbors_of_copy`
+          node = ({edge.node1, edge.node2} - {copy}).pop()
+          copy_neighbors[copy].add(node)
+
+          # Update `copy_neighbors_of`
+          node_neighbors[node].add(copy)
 
 
-def get_path(net: network.TensorNetwork, algorithm: Algorithm
-             ) -> Tuple[List[Tuple[int, int]],
-                        List[network_components.BaseNode]]:
+  return copy_neighbors, node_neighbors, edge_map
+
+
+
+def get_path(net: network.TensorNetwork, algorithm: Algorithm,
+             sorted_nodes: List[network_components.Node],
+             edge_map: Dict[network_components.Edge,
+                            network_components.Edge] = None
+             ) -> List[Tuple[int, int]]:
   """Calculates the contraction paths using `opt_einsum` methods.
 
   Args:
@@ -47,35 +77,15 @@ def get_path(net: network.TensorNetwork, algorithm: Algorithm
   Returns:
     The optimal contraction path as returned by `opt_einsum`.
   """
-  copy_nodes = {node: get_first_nondangling(node) for node in net.nodes_set
-                if isinstance(node, network_components.CopyNode)}
-
-  sorted_nodes = sorted(net.nodes_set - set(copy_nodes.keys()),
-                        key = lambda n: n.signature)
-
-  edge_map = {} # Maps all non-dangling edges of a copy node to a specific
-                # non-dangling edge of this copy node
-  node_to_copies = {} # Maps nodes to their copy node neighbors
-  copy_to_nodes = {} # Maps copy nodes to their node neighbors
-  for copy, edge in copy_nodes.items():
-    copy_to_nodes[copy] = {}
-    for e in copy.edges:
-      if not e.is_dangling():
-        edge_map[e] = edge
-        node = ({e.node1, e.node2} - {copy}).pop()
-        copy_to_nodes[copy].add(node)
-        if node in node_to_copies:
-          node_to_copies[node].add(copy)
-        else:
-          node_to_copies[node] = {copy}
-
-
-  input_sets = [set(node.edges) for node in sorted_nodes]
+  # TODO: FIx docstring
+  if edge_map:
+    input_sets = [set((edge_map[edge] if edge in edge_map else edge
+                       for edge in node.edges)) for node in sorted_nodes]
+  else:
+    input_sets = [set(node.edges) for node in sorted_nodes]
   output_set = net.get_all_edges() - net.get_all_nondangling()
   size_dict = {edge: edge.dimension for edge in net.get_all_edges()}
-
-  return algorithm(input_sets, output_set, size_dict), sorted_nodes
-
+  return algorithm(input_sets, output_set, size_dict)
 
 
 #def get_path(net: network.TensorNetwork, algorithm: Algorithm
