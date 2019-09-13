@@ -3,6 +3,10 @@ import tensornetwork
 import opt_einsum
 import time
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.rcParams['mathtext.fontset'] = 'cm'
+matplotlib.rcParams['font.family'] = 'STIXGeneral'
+matplotlib.rcParams["font.size"] = 26
 
 
 D_list = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
