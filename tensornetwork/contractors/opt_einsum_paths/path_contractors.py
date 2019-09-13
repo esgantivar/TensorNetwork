@@ -65,10 +65,10 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
         new_node = net.contract_between(nodes[a], nodes[b],
                                         allow_outer_product=True)
       else:
-        copies_of_a.pop(copy)
-        copies_of_b.pop(copy)
+        copies_of_a.remove(copy)
+        copies_of_b.remove(copy)
         copy_neighbors.pop(copy)
-        new_node = net.contract_copy_node(copy)
+        new_node = utils.contract_between_copy(net, copy)
 
       node_neighbors[new_node] = copies_of_a | copies_of_b
       for copy2 in node_neighbors[new_node]:

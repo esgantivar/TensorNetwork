@@ -104,5 +104,8 @@ def test_path_optimal(params):
   net = globals()[network_name]()
   path_algorithm = getattr(opt_einsum.paths, algorithm_name)
 
-  calculated_path = utils.get_path(net, path_algorithm)
+  copy_neighbors, _, edge_map = utils.find_copy_nodes(net)
+  nodes = sorted(net.nodes_set - set(copy_neighbors.keys()),
+                 key = lambda n: n.signature)
+  calculated_path = utils.get_path(net, path_algorithm, nodes, edge_map)
   assert check_path(calculated_path, correct_path)
