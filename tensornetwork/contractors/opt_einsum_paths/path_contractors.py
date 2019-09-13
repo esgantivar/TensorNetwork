@@ -14,6 +14,7 @@
 """Contractors based on `opt_einsum`'s path algorithms."""
 
 import functools
+import operator
 import opt_einsum
 from tensornetwork import network
 from tensornetwork import network_components
@@ -68,7 +69,18 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
         copies_of_a.remove(copy)
         copies_of_b.remove(copy)
         copy_neighbors.pop(copy)
-        new_node = utils.contract_between_copy(net, copy)
+        shared_edges = net.get_shared_edges(nodes[a], nodes[b])
+        if not shared_edges:
+          new_node = net.contract_copy_node(copy)
+        else:
+          shared_size = functools.reduce(
+              operator.mul, (edge.dimension for edge in shared_edges), 1)
+          if shared_size > copy.rank:
+            nodes[a] @ nodes[b]
+            new_node = net.contract_copy_node(copy)
+          else:
+            net.contract_copy_node(copy)
+            new_node = nodes[a] @ nodes[b]
 
       node_neighbors[new_node] = copies_of_a | copies_of_b
       for copy2 in node_neighbors[new_node]:

@@ -59,46 +59,6 @@ def find_copy_nodes(net: network.TensorNetwork) -> Tuple[
   return copy_neighbors, node_neighbors, edge_map
 
 
-def contract_between_copy(net: network.TensorNetwork,
-                          copy: network_components.CopyNode
-                          ) -> network_components.Node:
-  """Contract between for nodes that share a Copy node.
-
-  The Copy node should not have dangling edges and should be connected
-  with two nodes only.
-  """
-  # TODO: Complete docstring
-  nodes = set(copy.get_partners().keys())
-  node1 = nodes.pop()
-  node2 = nodes.pop()
-
-  shared_edges = net.get_shared_edges(node1, node2)
-  if not shared_edges:
-    return net.contract_copy_node(copy)
-
-  # Disconnect edges that connect `node1` and `node2`
-  new_shared_edges = set()
-  for edge in shared_edges:
-    new_edges = net.disconnect(edge)
-    new_shared_edges.add(new_edges[0])
-    new_shared_edges.add(new_edges[1])
-
-  # Remove the Copy node and add a new one that has the `new_shared_edges`
-  dimension = copy.dimension
-  rank = copy.rank
-  _, copy_edges = net.remove_node(copy)
-  new_copy = net.add_node(network_components.CopyNode(
-      rank=rank + len(new_shared_edges), dimension=dimension))
-
-  # Make edge connections
-  for i, edge in enumerate(copy_edges.values()):
-    new_copy[i] ^ edge
-  for i, edge in enumerate(new_shared_edges):
-    new_copy[rank + i] ^ edge
-
-  return net.contract_copy_node(new_copy)
-
-
 def get_path(net: network.TensorNetwork, algorithm: Algorithm,
              sorted_nodes: List[network_components.Node],
              edge_map: Dict[network_components.Edge,
