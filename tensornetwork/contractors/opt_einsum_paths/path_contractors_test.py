@@ -16,8 +16,8 @@ import numpy as np
 import pytest
 import tensornetwork
 from tensornetwork.contractors.opt_einsum_paths import path_contractors
-import tensorflow as tf
-tf.enable_v2_behavior()
+#import tensorflow as tf
+#tf.enable_v2_behavior()
 
 
 @pytest.fixture(name="path_algorithm",
@@ -106,3 +106,15 @@ def test_copy_node(backend, path_algorithm):
   y[2] ^ c[1]
   node = path_algorithm(net).get_final_node()
   np.testing.assert_allclose(node.tensor, 9 * np.ones(3))
+
+
+def test_copy_with_dangling(backend, path_algorithm):
+  net = tensornetwork.TensorNetwork(backend=backend)
+  x = net.add_node(np.ones([3, 3]))
+  y = net.add_node(np.ones([3, 3, 3]))
+  c = net.add_node(tensornetwork.CopyNode(rank=3, dimension=3))
+  x[0] ^ y[1]
+  x[1] ^ c[0]
+  y[2] ^ c[1]
+  node = path_algorithm(net).get_final_node()
+  np.testing.assert_allclose(node.tensor, 3 * np.ones([3, 3]))
