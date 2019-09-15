@@ -18,7 +18,7 @@ from __future__ import print_function
 import pytest
 
 
-@pytest.fixture(name="backend", params=["numpy", "tensorflow",
-                                        "jax", "pytorch"])
+@pytest.fixture(name="backend", params=["numpy"]) #"tensorflow",
+                                        #"jax", "pytorch"])
 def backend_fixure(request):
   return request.param
