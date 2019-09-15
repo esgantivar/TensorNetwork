@@ -116,5 +116,6 @@ def test_copy_with_dangling(backend, path_algorithm):
   x[0] ^ y[1]
   x[1] ^ c[0]
   y[2] ^ c[1]
-  node = path_algorithm(net).get_final_node()
+  edge_order = [y[0], c[2]]
+  node = path_algorithm(net, output_edge_order=edge_order).get_final_node()
   np.testing.assert_allclose(node.tensor, 3 * np.ones([3, 3]))

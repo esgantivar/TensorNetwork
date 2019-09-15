@@ -61,26 +61,29 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
     copies_of_b = node_neighbors.pop(nodes[b])
     shared_copies = copies_of_a & copies_of_b
     for copy in shared_copies:
-      has_dangling = len(copy.edges) > len(copy.get_all_nondangling())
-      if len(copy_neighbors[copy]) > 2 or has_dangling:
+      if len(copy_neighbors[copy]) > 2:
+        # If the
         new_node = net.contract_between(nodes[a], nodes[b],
                                         allow_outer_product=True)
       else:
         copies_of_a.remove(copy)
         copies_of_b.remove(copy)
         copy_neighbors.pop(copy)
-        shared_edges = net.get_shared_edges(nodes[a], nodes[b])
-        if not shared_edges:
-          new_node = net.contract_copy_node(copy)
+        if len(copy.edges) > len(copy.get_all_nondangling()):
+          new_node = (copy @ nodes[a]) @ nodes[b]
         else:
-          shared_size = functools.reduce(
-              operator.mul, (edge.dimension for edge in shared_edges), 1)
-          if shared_size > copy.rank:
-            nodes[a] @ nodes[b]
+          shared_edges = net.get_shared_edges(nodes[a], nodes[b])
+          if not shared_edges:
             new_node = net.contract_copy_node(copy)
           else:
-            net.contract_copy_node(copy)
-            new_node = nodes[a] @ nodes[b]
+            shared_size = functools.reduce(
+                operator.mul, (edge.dimension for edge in shared_edges), 1)
+            if shared_size > copy.rank:
+              nodes[a] @ nodes[b]
+              new_node = net.contract_copy_node(copy)
+            else:
+              net.contract_copy_node(copy)
+              new_node = nodes[a] @ nodes[b]
 
       node_neighbors[new_node] = copies_of_a | copies_of_b
       for copy2 in node_neighbors[new_node]:
