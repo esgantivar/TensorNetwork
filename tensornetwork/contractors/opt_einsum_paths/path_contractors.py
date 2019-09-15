@@ -56,42 +56,36 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
   # Apply `opt_einsum`'s algorithm
   path = utils.get_path(net, algorithm, nodes, edge_map)
   for a, b in path:
+    new_node = nodes[a] @ nodes[b]
     # Check if the two nodes share copy nodes
     copies_of_a = node_neighbors.pop(nodes[a])
     copies_of_b = node_neighbors.pop(nodes[b])
     shared_copies = copies_of_a & copies_of_b
+    # Contract copy nodes
     for copy in shared_copies:
-      if len(copy_neighbors[copy]) > 2:
-        # If the
-        new_node = net.contract_between(nodes[a], nodes[b],
-                                        allow_outer_product=True)
-      else:
+      # Collapse the copy node if it is connected only to the current nodes
+      if copy_neighbors[copy] == {nodes[a], nodes[b]}:
+        if len(copy.edges) > len(copy.get_all_nondangling()):
+          new_node = new_node @ copy
+        else:
+          new_node = net.contract_copy_node(copy)
+        # update copy maps
         copies_of_a.remove(copy)
         copies_of_b.remove(copy)
         copy_neighbors.pop(copy)
-        if len(copy.edges) > len(copy.get_all_nondangling()):
-          new_node = (copy @ nodes[a]) @ nodes[b]
-        else:
-          shared_edges = net.get_shared_edges(nodes[a], nodes[b])
-          if not shared_edges:
-            new_node = net.contract_copy_node(copy)
-          else:
-            shared_size = functools.reduce(
-                operator.mul, (edge.dimension for edge in shared_edges), 1)
-            if shared_size > copy.rank:
-              nodes[a] @ nodes[b]
-              new_node = net.contract_copy_node(copy)
-            else:
-              net.contract_copy_node(copy)
-              new_node = nodes[a] @ nodes[b]
 
-      node_neighbors[new_node] = copies_of_a | copies_of_b
-      for copy2 in node_neighbors[new_node]:
-        copy_neighbors[copy2].add(new_node)
+    # Update `copy_neighbors`
+    for copy in copies_of_a:
+      copy_neighbors[copy].remove(nodes[a])
+      copy_neighbors[copy].add(new_node)
+    for copy in copies_of_b:
+      copy_neighbors[copy].remove(nodes[b])
+      copy_neighbors[copy].add(new_node)
 
-    if not shared_copies:
-      new_node = nodes[a] @ nodes[b]
-      node_neighbors[new_node] = copies_of_a | copies_of_b
+    # Update `node_neighbors`
+    node_neighbors[new_node] = copies_of_a | copies_of_b
+
+    # Update `nodes`
     nodes.append(new_node)
     nodes = utils.multi_remove(nodes, [a, b])
 
