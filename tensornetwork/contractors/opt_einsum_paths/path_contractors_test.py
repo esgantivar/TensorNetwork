@@ -152,3 +152,17 @@ def test_multiple_copies2(backend, path_algorithm):
   z[1] ^ a[3]
   node = path_algorithm(net).get_final_node()
   np.testing.assert_allclose(node.tensor, 8 * np.ones(2))
+
+
+def test_connected_copies(backend, path_algorithm):
+  net = tensornetwork.TensorNetwork(backend=backend)
+  x = net.add_node(np.ones([2, 2]))
+  y = net.add_node(np.ones([2, 2]))
+  a = net.add_node(tensornetwork.CopyNode(rank=3, dimension=2))
+  b = net.add_node(tensornetwork.CopyNode(rank=2, dimension=2))
+  x[0] ^ y[0]
+  x[1] ^ a[0]
+  y[1] ^ b[0]
+  a[1] ^ b[1]
+  node = path_algorithm(net).get_final_node()
+  np.testing.assert_allclose(node.tensor, 4 * np.ones(2))

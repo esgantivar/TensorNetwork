@@ -49,9 +49,15 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
     # There's nothing to contract.
     return net
 
+  # TODO: Handle the case of connected copy nodes
+  # Fuse them before you start contracting
+
   copy_neighbors, node_neighbors, edge_map = utils.find_copy_nodes(net)
   nodes = sorted(net.nodes_set - set(copy_neighbors.keys()),
                  key = lambda n: n.signature)
+
+  # TODO: Fix creating multiple copy legs in the same node as it leads to
+  # memory errors
 
   # Apply `opt_einsum`'s algorithm
   path = utils.get_path(net, algorithm, nodes, edge_map)
