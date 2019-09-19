@@ -74,27 +74,24 @@ def isolate_copy_node(net: network.TensorNetwork,
                       node1: network_components.BaseNode,
                       node2: network_components.BaseNode
                       ) -> network_components.CopyNode:
-  # TODO: Handle the case in which the copy and node1 or node2 share more
-  # than one edges!
-
   # Find shared edges
-  edge1, edge2 = None, None
-  for edge in copy.edges:
-    if edge.node1 is node1 or edge.node2 is node1:
-      edge1 = edge
-    elif edge.node1 is node2 or edge.node2 is node2:
-      edge2 = edge
-    if edge1 is not None and edge2 is not None:
-      break
+  edges1 = set(edge for edge in copy.edges if node1 in {edge.node1, edge.node2})
+  edges2 = set(edge for edge in copy.edges if node2 in {edge.node1, edge.node2})
 
-  edge1_node, edge1_copy = disconnect_copy_edge(net, edge1, node1)
-  edge2_node, edge2_copy = disconnect_copy_edge(net, edge2, node2)
-
-  copy.remove_edge(edge2_copy)
-  new_copy = network_components.CopyNode(dimension=copy.dimension, rank=3)
-  new_copy[0] ^ edge1_copy
-  new_copy[1] ^ edge1_node
-  new_copy[2] ^ edge2_node
+  new_rank = len(edges1) + len(edges2) + 1
+  new_copy = net.add_node(
+      network_components.CopyNode(dimension=copy.dimension, rank=new_rank))
+  for i, edge in enumerate(edges1):
+    node_edge, copy_edge = disconnect_copy_edge(net, edge, node1)
+    if new_copy[0].is_dangling():
+      new_copy[0] ^ copy_edge
+    else:
+      copy.remove_edge(copy_edge)
+    node_edge ^ new_copy[i + 1]
+  for i, edge in enumerate(edges2):
+    node_edge, copy_edge = disconnect_copy_edge(net, edge, node2)
+    copy.remove_edge(copy_edge)
+    node_edge ^ new_copy[i + len(edges1) + 1]
   return new_copy
 
 
@@ -109,8 +106,8 @@ def contract_between_with_copies(net, node1, node2, copies):
       # TODO: Fix the implementation of this
       new_node = net.contract_copy_node(copy)
     else:
-      raise ValueError("Cannot use `contract_between_with_copies` with "
-                       "node {} that has {} edges".format(copy, n))
+      raise NotImplementedError("Cannot contract with copies node {} "
+                                "that has {} edges".format(copy, n))
   if new_node is None:
     return node1 @ node2
   return new_node @ new_node

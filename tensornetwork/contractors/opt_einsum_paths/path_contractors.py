@@ -69,9 +69,13 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
 
     copies_to_contract = set()
     for copy in shared_copies:
+      for pnode in copy_neighbors[copy]: print(pnode, end=",")
+      print()
+      print(nodes[a], nodes[b])
       # contract copy node
       if (copy_neighbors[copy] == {nodes[a], nodes[b]} and
           len(copy.edges) <= len(copy.get_all_nondangling()) + 1):
+        print("remove", a, b)
         copies_to_contract.add(copy)
         # this copy will be contracted so remove it from maps
         copies_of_a.remove(copy)
@@ -80,6 +84,7 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
       else:
         # isolate the part of the copy node that is connected to the current
         # nodes and add this to `dangling_copies`
+        #print("isolate", a, b)
         copies_to_contract.add(
             utils.isolate_copy_node(net, copy, nodes[a], nodes[b]))
 
