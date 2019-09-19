@@ -329,7 +329,7 @@ class BaseNode(ABC):
       raise ValueError("Cannot use '@' on disabled node {}.".format(other.name))
     if self.network is None:
       raise ValueError("Cannot use '@' on disabled node {}.".format(self.name))
-    
+
     if other.network is not self.network:
       raise ValueError("Cannot use '@' on nodes in different networks.")
     return self.network.contract_between(self, other)
@@ -445,9 +445,9 @@ class Node(BaseNode):
   """
 
   def __init__(
-      self, 
-      tensor: Tensor, 
-      name: Text, 
+      self,
+      tensor: Tensor,
+      name: Text,
       axis_names: List[Text],
       network: Optional[TensorNetwork] = None) -> None:
     """Create a node for the TensorNetwork.
@@ -572,11 +572,17 @@ class CopyNode(BaseNode):
     assert edge.node2 is self
     return edge.node1, edge.axis1
 
-  def get_partners(self) -> Dict[BaseNode, Set[int]]:
+  def get_partners(self) -> Tuple[Dict[Optional[BaseNode], Set[int]]]:
     partners = {}  # type: Dict[BaseNode, Set[int]]
     for edge in self.edges:
       if edge.is_dangling():
-        raise ValueError('Cannot contract copy tensor with dangling edges')
+        if None in partners:
+          raise ValueError('Cannot contract copy tensor with more than one '
+                           'dangling edges')
+        assert edge.node1 is self
+        assert edge.node2 is None
+        partners[None] = {edge.axis1}
+        continue
       if self._is_my_trace(edge):
         continue
       partner_node, shared_axis = self._get_partner(edge)
@@ -603,14 +609,26 @@ class CopyNode(BaseNode):
   def _make_einsum_output_term(self, next_index: int) -> str:
     return "".join(self._VALID_SUBSCRIPTS[i] for i in range(1, next_index))
 
-  def _make_einsum_expression(self, partners: Dict[BaseNode, Set[int]]) -> str:
+  def _make_einsum_expression(self, partners: Dict[Optional[BaseNode],
+                                                   Set[int]]) -> str:
     next_index = 1  # zero is reserved for the shared index
     einsum_input_terms = []
+    dangling_index = None
     for partner_node, shared_axes in partners.items():
-      einsum_input_term, next_index = self._make_einsum_input_term(
-          partner_node, shared_axes, next_index)
-      einsum_input_terms.append(einsum_input_term)
+      if partner_node is None:
+        dangling_index = next_index - 1
+      else:
+        einsum_input_term, next_index = self._make_einsum_input_term(
+            partner_node, shared_axes, next_index)
+        einsum_input_terms.append(einsum_input_term)
+
     einsum_output_term = self._make_einsum_output_term(next_index)
+    if dangling_index is not None:
+      left = einsum_output_term[:dangling_index]
+      right = einsum_output_term[dangling_index:]
+      dangling_term = self._VALID_SUBSCRIPTS[0]
+      einsum_output_term = "".join((left, dangling_term, right))
+
     einsum_expression = ",".join(einsum_input_terms) + "->" + einsum_output_term
     return einsum_expression
 
@@ -618,7 +636,8 @@ class CopyNode(BaseNode):
     """Compute tensor corresponding to contraction of self with neighbors."""
     partners = self.get_partners()
     einsum_expression = self._make_einsum_expression(partners)
-    tensors = [partner.get_tensor() for partner in partners]
+    tensors = [partner.get_tensor() for partner in partners
+               if partner is not None]
     return self.network.backend.einsum(einsum_expression, *tensors)
 
   # pylint: disable=W0235

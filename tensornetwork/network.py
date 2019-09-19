@@ -38,11 +38,11 @@ class TensorNetwork:
                dtype: Optional[Type[np.number]] = None) -> None:
     """
     Args:
-      backend (str): name of the backend. Currently supported 
+      backend (str): name of the backend. Currently supported
                      backends are 'numpy', 'tensorflow', 'pytorch', 'jax', 'shell'
-      dtype: dtype of the backend of network. If `None`, no dtype checks 
-             are performed. Default value is `None`. For backend 
-             initialization functions like `zeros`, `ones`, `randn` a 
+      dtype: dtype of the backend of network. If `None`, no dtype checks
+             are performed. Default value is `None`. For backend
+             initialization functions like `zeros`, `ones`, `randn` a
              dtype of `None` defaults to float64
     """
     if backend is None:
@@ -248,7 +248,7 @@ class TensorNetwork:
     """Create a new copy node in the network.
 
     Copy node represents the copy tensor, i.e. tensor :math:`C` such that
-    :math:`C_{ij...k} = 1` if :math:`i = j = ... = k` and 
+    :math:`C_{ij...k} = 1` if :math:`i = j = ... = k` and
     :math:`C_{ij...k}= 0` otherwise.
 
     Args:
@@ -546,18 +546,29 @@ class TensorNetwork:
     partners = copy_node.get_partners()
     new_axis = 0
     for partner in partners:
-      for edge in partner.edges:
-        if edge.node1 is copy_node or edge.node2 is copy_node:
-          continue
-        old_axis = edge.axis1 if edge.node1 is partner else edge.axis2
+      if partner is None:
+        old_axis = partners[partner].pop()
+        edge = copy_node[old_axis]
         edge.update_axis(
-            old_node=partner,
+            old_node=copy_node,
             old_axis=old_axis,
             new_node=new_node,
             new_axis=new_axis)
         new_node.add_edge(edge, new_axis)
         new_axis += 1
-      self.nodes_set.remove(partner)
+      else:
+        for edge in partner.edges:
+          if edge.node1 is copy_node or edge.node2 is copy_node:
+            continue
+          old_axis = edge.axis1 if edge.node1 is partner else edge.axis2
+          edge.update_axis(
+              old_node=partner,
+              old_axis=old_axis,
+              new_node=new_node,
+              new_axis=new_axis)
+          new_node.add_edge(edge, new_axis)
+          new_axis += 1
+        self.nodes_set.remove(partner)
     assert len(new_tensor.shape) == new_axis
 
     self.nodes_set.remove(copy_node)
@@ -644,7 +655,7 @@ class TensorNetwork:
 
     For example, if after all contractions, there were 3 nodes remaining with
     shapes :math:`(2, 3)`, :math:`(4, 5, 6)`, and :math:`(7)`
-    respectively, the newly returned node will have shape 
+    respectively, the newly returned node will have shape
     :math:`(2, 3, 4, 5, 6, 7)`.
 
     Args:
@@ -828,7 +839,7 @@ class TensorNetwork:
       edge: The given edge.
 
     Returns:
-      A `set` of all of the edges parallel to the given edge 
+      A `set` of all of the edges parallel to the given edge
       (including the given edge).
   """
     return self.get_shared_edges(edge.node1, edge.node2)
@@ -856,7 +867,7 @@ class TensorNetwork:
     """Flatten all edges in the network.
 
     Returns:
-      A list of all the flattened edges. If there was only one edge between 
+      A list of all the flattened edges. If there was only one edge between
       two given nodes, that original edge is included in this list.
     """
     flattened_edges = []
@@ -883,7 +894,7 @@ class TensorNetwork:
       allow_outer_product: Optional boolean. If two nodes do not share any edges
         and `allow_outer_product` is set to `True`, then we return the outer
         product of the two nodes. Else, we raise a `ValueError`.
-      output_edge_order: Optional sequence of Edges. When not `None`, must 
+      output_edge_order: Optional sequence of Edges. When not `None`, must
         contain all edges belonging to, but not shared by `node1` and `node2`.
         The axes of the new node will be permuted (if necessary) to match this
         ordering of Edges.
@@ -988,9 +999,9 @@ class TensorNetwork:
     """Split a `Node` using Singular Value Decomposition.
 
     Let M be the matrix created by flattening left_edges and right_edges into
-    2 axes. Let :math:`U S V^* = M` be the Singular Value Decomposition of 
-    :math:`M`. This will split the network into 2 nodes. The left node's 
-    tensor will be :math:`U \\sqrt{S}` and the right node's tensor will be 
+    2 axes. Let :math:`U S V^* = M` be the Singular Value Decomposition of
+    :math:`M`. This will split the network into 2 nodes. The left node's
+    tensor will be :math:`U \\sqrt{S}` and the right node's tensor will be
     :math:`\\sqrt{S} V^*` where :math:`V^*` is
     the adjoint of :math:`V`.
 
@@ -1020,18 +1031,18 @@ class TensorNetwork:
         automatically.
       right_name: The name of the new right node. If `None`, a name will be generated
         automatically.
-      edge_name: The name of the new `Edge` connecting the new left and right node. 
+      edge_name: The name of the new `Edge` connecting the new left and right node.
         If `None`, a name will be generated automatically.
 
     Returns:
       A tuple containing:
-        left_node: 
+        left_node:
           A new node created that connects to all of the `left_edges`.
           Its underlying tensor is :math:`U \\sqrt{S}`
-        right_node: 
+        right_node:
           A new node created that connects to all of the `right_edges`.
           Its underlying tensor is :math:`\\sqrt{S} V^*`
-        truncated_singular_values: 
+        truncated_singular_values:
           The vector of truncated singular values.
     """
     node.reorder_edges(left_edges + right_edges)
@@ -1072,9 +1083,9 @@ class TensorNetwork:
     """Split a `Node` using QR decomposition
 
     Let M be the matrix created by flattening left_edges and right_edges into
-    2 axes. Let :math:`QR = M` be the QR Decomposition of 
-    :math:`M`. This will split the network into 2 nodes. The left node's 
-    tensor will be :math:`Q` (an orthonormal matrix) and the right node's tensor will be 
+    2 axes. Let :math:`QR = M` be the QR Decomposition of
+    :math:`M`. This will split the network into 2 nodes. The left node's
+    tensor will be :math:`Q` (an orthonormal matrix) and the right node's tensor will be
     :math:`R` (an upper triangular matrix)
 
     Args:
@@ -1085,15 +1096,15 @@ class TensorNetwork:
         automatically.
       right_name: The name of the new right node. If `None`, a name will be generated
         automatically.
-      edge_name: The name of the new `Edge` connecting the new left and right node. 
+      edge_name: The name of the new `Edge` connecting the new left and right node.
         If `None`, a name will be generated automatically.
 
     Returns:
       A tuple containing:
-        left_node: 
+        left_node:
           A new node created that connects to all of the `left_edges`.
           Its underlying tensor is :math:`Q`
-        right_node: 
+        right_node:
           A new node created that connects to all of the `right_edges`.
           Its underlying tensor is :math:`R`
     """
@@ -1125,9 +1136,9 @@ class TensorNetwork:
     """Split a `Node` using RQ (reversed QR) decomposition
 
     Let M be the matrix created by flattening left_edges and right_edges into
-    2 axes. Let :math:`QR = M^*` be the QR Decomposition of 
-    :math:`M^*`. This will split the network into 2 nodes. The left node's 
-    tensor will be :math:`R^*` (a lower triangular matrix) and the right node's tensor will be 
+    2 axes. Let :math:`QR = M^*` be the QR Decomposition of
+    :math:`M^*`. This will split the network into 2 nodes. The left node's
+    tensor will be :math:`R^*` (a lower triangular matrix) and the right node's tensor will be
     :math:`Q^*` (an orthonormal matrix)
 
     Args:
@@ -1138,15 +1149,15 @@ class TensorNetwork:
         automatically.
       right_name: The name of the new right node. If `None`, a name will be generated
         automatically.
-      edge_name: The name of the new `Edge` connecting the new left and right node. 
+      edge_name: The name of the new `Edge` connecting the new left and right node.
         If `None`, a name will be generated automatically.
 
     Returns:
       A tuple containing:
-        left_node: 
+        left_node:
           A new node created that connects to all of the `left_edges`.
           Its underlying tensor is :math:`Q`
-        right_node: 
+        right_node:
           A new node created that connects to all of the `right_edges`.
           Its underlying tensor is :math:`R`
     """
@@ -1183,7 +1194,7 @@ class TensorNetwork:
     """Split a node by doing a full singular value decomposition.
 
     Let M be the matrix created by flattening left_edges and right_edges into
-    2 axes. Let :math:`U S V^* = M` be the Singular Value Decomposition of 
+    2 axes. Let :math:`U S V^* = M` be the Singular Value Decomposition of
     :math:`M`.
 
     The left most node will be :math:`U` tensor of the SVD, the middle node is
@@ -1218,25 +1229,25 @@ class TensorNetwork:
         automatically.
       right_name: The name of the new right node. If None, a name will be generated
         automatically.
-      left_edge_name: The name of the new left `Edge` connecting 
-        the new left node (`U`) and the new central node (`S`). 
+      left_edge_name: The name of the new left `Edge` connecting
+        the new left node (`U`) and the new central node (`S`).
         If `None`, a name will be generated automatically.
-      right_edge_name: The name of the new right `Edge` connecting 
-        the new central node (`S`) and the new right node (`V*`). 
+      right_edge_name: The name of the new right `Edge` connecting
+        the new central node (`S`) and the new right node (`V*`).
         If `None`, a name will be generated automatically.
 
     Returns:
       A tuple containing:
-        left_node: 
+        left_node:
           A new node created that connects to all of the `left_edges`.
           Its underlying tensor is :math:`U`
-        singular_values_node: 
+        singular_values_node:
           A new node that has 2 edges connecting `left_node` and `right_node`.
           Its underlying tensor is :math:`S`
-        right_node: 
+        right_node:
           A new node created that connects to all of the `right_edges`.
           Its underlying tensor is :math:`V^*`
-        truncated_singular_values: 
+        truncated_singular_values:
           The vector of truncated singular values.
     """
     node.reorder_edges(left_edges + right_edges)
