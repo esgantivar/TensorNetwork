@@ -62,23 +62,32 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
   # Apply `opt_einsum`'s algorithm
   path = utils.get_path(net, algorithm, nodes, edge_map)
   for a, b in path:
-    new_node = nodes[a] @ nodes[b]
     # Check if the two nodes share copy nodes
     copies_of_a = node_neighbors.pop(nodes[a])
     copies_of_b = node_neighbors.pop(nodes[b])
     shared_copies = copies_of_a & copies_of_b
-    # Contract copy nodes
+
+    copies_to_contract = set()
     for copy in shared_copies:
-      # Collapse the copy node if it is connected only to the current nodes
-      if copy_neighbors[copy] == {nodes[a], nodes[b]}:
-        if len(copy.edges) > len(copy.get_all_nondangling()):
-          new_node = new_node @ copy
-        else:
-          new_node = net.contract_copy_node(copy)
-        # update copy maps
+      # contract copy node
+      if (copy_neighbors[copy] == {nodes[a], nodes[b]} and
+          len(copy.edges) <= len(copy.get_all_nondangling()) + 1):
+        copies_to_contract.add(copy)
+        # this copy will be contracted so remove it from maps
         copies_of_a.remove(copy)
         copies_of_b.remove(copy)
         copy_neighbors.pop(copy)
+      else:
+        # isolate the part of the copy node that is connected to the current
+        # nodes and add this to `dangling_copies`
+        copies_to_contract.add(
+            utils.isolate_copy_node(net, copy, nodes[a], nodes[b]))
+
+    if shared_copies:
+      new_node = utils.contract_between_with_copies(net, nodes[a], nodes[b],
+                                                    copies_to_contract)
+    else:
+      new_node = nodes[a] @ nodes[b]
 
     # Update `copy_neighbors`
     for copy in copies_of_a:
@@ -87,10 +96,8 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
     for copy in copies_of_b:
       copy_neighbors[copy].remove(nodes[b])
       copy_neighbors[copy].add(new_node)
-
     # Update `node_neighbors`
     node_neighbors[new_node] = copies_of_a | copies_of_b
-
     # Update `nodes`
     nodes.append(new_node)
     nodes = utils.multi_remove(nodes, [a, b])

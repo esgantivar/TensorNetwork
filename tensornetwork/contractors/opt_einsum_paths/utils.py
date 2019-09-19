@@ -59,6 +59,63 @@ def find_copy_nodes(net: network.TensorNetwork) -> Tuple[
   return copy_neighbors, node_neighbors, edge_map
 
 
+def disconnect_copy_edge(net: network.TensorNetwork,
+                         edge: network_components.Edge,
+                         node: network_components.BaseNode):
+  edge_node, edge_copy = net.disconnect(edge)
+  if edge_node.node1 is not node:
+    assert edge_copy.node1 is node
+    edge_node, edge_copy = edge_copy, edge_node
+  return edge_node, edge_copy
+
+
+def isolate_copy_node(net: network.TensorNetwork,
+                      copy: network_components.CopyNode,
+                      node1: network_components.BaseNode,
+                      node2: network_components.BaseNode
+                      ) -> network_components.CopyNode:
+  # TODO: Handle the case in which the copy and node1 or node2 share more
+  # than one edges!
+
+  # Find shared edges
+  edge1, edge2 = None, None
+  for edge in copy.edges:
+    if edge.node1 is node1 or edge.node2 is node1:
+      edge1 = edge
+    elif edge.node1 is node2 or edge.node2 is node2:
+      edge2 = edge
+    if edge1 is not None and edge2 is not None:
+      break
+
+  edge1_node, edge1_copy = disconnect_copy_edge(net, edge1, node1)
+  edge2_node, edge2_copy = disconnect_copy_edge(net, edge2, node2)
+
+  copy.remove_edge(edge2_copy)
+  new_copy = network_components.CopyNode(dimension=copy.dimension, rank=3)
+  new_copy[0] ^ edge1_copy
+  new_copy[1] ^ edge1_node
+  new_copy[2] ^ edge2_node
+  return new_copy
+
+
+def contract_between_with_copies(net, node1, node2, copies):
+  new_node = None
+  for copy in copies:
+    n = len(copy.edges)
+    if n == 2:
+      _, broken_edges = net.remove_node(copy)
+      broken_edges[0] ^ broken_edges[1]
+    elif n == 3:
+      # TODO: Fix the implementation of this
+      new_node = net.contract_copy_node(copy)
+    else:
+      raise ValueError("Cannot use `contract_between_with_copies` with "
+                       "node {} that has {} edges".format(copy, n))
+  if new_node is None:
+    return node1 @ node2
+  return new_node @ new_node
+
+
 def get_path(net: network.TensorNetwork, algorithm: Algorithm,
              sorted_nodes: List[network_components.Node],
              edge_map: Dict[network_components.Edge,
