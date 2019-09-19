@@ -562,6 +562,26 @@ class CopyNode(BaseNode):
     copy_tensor[(i,) * rank] = 1
     return copy_tensor
 
+  def remove_edge(self, edge: "Edge"):
+    if not edge.is_dangling():
+      raise ValueError('Attempted to remove non-dangling edge {} from copy '
+                       'node {}.'.format(edge, self))
+    if self._tensor is not None:
+      raise ValueError('Cannot remove edge of copy node {} because its '
+                       'tensor is computed.'.format(self))
+    if self.rank < 2:
+      raise ValueError('Cannot remove edge from copy node {} '
+                       'with rank 1.'.format(self))
+    if edge not in self.edges:
+      raise ValueError('Edge {} does not belong to copy node {} and cannot '
+                       'be removed'.format(edge, self))
+    axis = edge.axis1
+    self.edges.pop(axis)
+    for i, e in enumerate(self.edges[axis:]):
+      ia = axis + i
+      e.update_axis(old_axis=ia + 1, old_node=self, new_axis=ia, new_node=self)
+    self.rank -= 1
+
   def _is_my_trace(self, edge: "Edge") -> bool:
     return edge.node1 is self and edge.node2 is self
 
