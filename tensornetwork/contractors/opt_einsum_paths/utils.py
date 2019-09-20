@@ -74,44 +74,6 @@ def find_copy_neighbors(net: network.TensorNetwork,
   return copies
 
 
-def disconnect_copy_edge(net: network.TensorNetwork,
-                         edge: network_components.Edge,
-                         node: network_components.BaseNode):
-  # TODO: Docstring
-  edge_node, edge_copy = net.disconnect(edge)
-  if edge_node.node1 is not node:
-    assert edge_copy.node1 is node
-    edge_node, edge_copy = edge_copy, edge_node
-  return edge_node, edge_copy
-
-
-def isolate_copy_node(net: network.TensorNetwork,
-                      copy: network_components.CopyNode,
-                      node1: network_components.BaseNode,
-                      node2: network_components.BaseNode
-                      ) -> network_components.CopyNode:
-  # TODO: Docstring
-  # Find shared edges
-  edges1 = set(edge for edge in copy.edges if node1 in {edge.node1, edge.node2})
-  edges2 = set(edge for edge in copy.edges if node2 in {edge.node1, edge.node2})
-
-  new_rank = len(edges1) + len(edges2) + 1
-  new_copy = net.add_node(
-      network_components.CopyNode(dimension=copy.dimension, rank=new_rank))
-  for i, edge in enumerate(edges1):
-    node_edge, copy_edge = disconnect_copy_edge(net, edge, node1)
-    if new_copy[0].is_dangling():
-      new_copy[0] ^ copy_edge
-    else:
-      copy.remove_edge(copy_edge)
-    node_edge ^ new_copy[i + 1]
-  for i, edge in enumerate(edges2):
-    node_edge, copy_edge = disconnect_copy_edge(net, edge, node2)
-    copy.remove_edge(copy_edge)
-    node_edge ^ new_copy[i + len(edges1) + 1]
-  return new_copy
-
-
 def contract_between_with_copies(
     net: network.TensorNetwork,
     node1: network_components.BaseNode,
@@ -127,72 +89,80 @@ def contract_between_with_copies(
   _VALID_SUBSCRIPTS = iter(
       'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
 
-  for copy in set(shared_copies):
-    if len(copy.edges) == 2:
-      _, broken_edges = net.remove_node(copy)
-      shared_copies.remove(copy)
-      broken_edges[0] ^ broken_edges[1]
-    elif len(copy.edges) != 3:
-      raise ValueError
-
-  copy_edges = {}
-  edge_map = {} # for mapping edges to einsum characters
-  copy_edge_map = {} # for updating edges in the end
+  edge_map = {edge: next(_VALID_SUBSCRIPTS)
+              for edge in net.get_shared_edges(node1, node2)}
+  copy_output = {}
   for copy in shared_copies:
-    for edge in copy.edges:
-      edge_nodes = {edge.node1, edge.node2}
-      if node1 not in edge_nodes and node2 not in edge_nodes:
-        copy_edge = edge
-        break
-    copy_edges.update({edge: copy_edge for edge in copy.edges})
-    edge_map[copy_edge] = next(_VALID_SUBSCRIPTS)
-    old_axis = edge.axis1 if edge.node1 is copy else edge.axis2
-    copy_edge_map[copy_edge] = (copy, old_axis)
-    net.remove_node(copy)
-
-  node1_expr = []
-  output_expr, output_edges = [], []
-  for edge in node1.edges:
-    if edge in copy_edges:
-      char = edge_map[copy_edges[edge]]
-      node1_expr.append(char)
-      output_expr.append(char)
-      output_edges.append((edge,) + copy_edge_map[copy_edges[edge]])
-    else:
-      char = next(_VALID_SUBSCRIPTS)
-      node1_expr.append(char)
-      if edge.node1 is node2 or edge.node2 is node2:
+    partners = copy.get_partners()
+    assert node1 in partners
+    assert node2 in partners
+    assert len(partners) >= 2
+    # each copy node corresponds to a specific einsum char
+    char = next(_VALID_SUBSCRIPTS)
+    if len(partners) == 2:
+      # copy is only connected to node1 and node2 and can be removed
+      _, broken_edges = net.remove_node(copy)
+      # map all the broken edges to the same einsum char
+      for edge in broken_edges.values():
+        assert edge not in edge_map
         edge_map[edge] = char
-      else:
-        output_expr.append(char)
-        old_axis = edge.axis1 if edge.node1 is node1 else edge.axis2
-        output_edges.append((edge, node1, old_axis))
-
-  node2_expr = []
-  for edge in node2.edges:
-    if edge in edge_map:
-      node2_expr.append(edge_map[edge])
-    elif edge in copy_edges:
-      node2_expr.append(edge_map[copy_edges[edge]])
     else:
-      char = next(_VALID_SUBSCRIPTS)
-      node2_expr.append(char)
-      output_expr.append(char)
-      old_axis = edge.axis1 if edge.node1 is node2 else edge.axis2
-      output_edges.append((edge, node2, old_axis))
+      # disconnect all edges that connect the copy node with node1 and node2
+      # and map the resulting dangling edges of node1 and node2 to the
+      # same einsum char
+      disc_copy_edges = set()
+      for edge in copy.edges:
+        edge_nodes = {edge.node1, edge.node2}
+        if node1 in edge_nodes or node2 in edge_nodes:
+          copy_edge, node_edge = net.disconnect(edge)
+          if copy_edge.node1 is not copy:
+            copy_edge, node_edge = node_edge, copy_edge
+          disc_copy_edges.add(copy_edge)
+          assert node_edge not in edge_map
+          edge_map[node_edge] = char
+      # now remove all the dangling edges we created in the copy node
+      # and keep only one to connect to the output
+      while len(disc_copy_edges) > 1:
+        copy.remove_edge(disc_copy_edges.pop())
+      copy_output[char] = disc_copy_edges.pop()
 
-  input_expr = ",".join(["".join(node1_expr), "".join(node2_expr)])
+  # Create einsum expressions and keep track of output edges in
+  # order to update the network after contraction
+  input_expr = {node1: [], node2: []}
+  output_expr, output_edges = [], []
+  for node, expr in input_expr.items():
+    for edge in node.edges:
+      if edge in edge_map:
+        char = edge_map[edge]
+        expr.append(char)
+        if char in copy_output:
+          output_expr.append(char)
+          output_edges.append((edge, None, char))
+      else:
+        char = next(_VALID_SUBSCRIPTS)
+        expr.append(char)
+        output_expr.append(char)
+        old_axis = edge.axis1 if edge.node1 is node else edge.axis2
+        output_edges.append((edge, node, old_axis))
+
+  input_expr = ["".join(input_expr[node]) for node in [node1, node2]]
+  input_expr = ",".join(input_expr)
   einsum_expr = "->".join([input_expr, "".join(output_expr)])
   new_tensor = net.backend.einsum(einsum_expr, node1.tensor, node2.tensor)
   new_node = net.add_node(new_tensor)
   # The uncontracted axes of node1 (node2) now correspond to the first (last)
   # axes of new_node.
   for new_axis, (edge, old_node, old_axis) in enumerate(output_edges):
-    edge.update_axis(old_node=old_node,
-                     old_axis=old_axis,
-                     new_axis=new_axis,
-                     new_node=new_node)
-    new_node.add_edge(edge, new_axis)
+    if old_node is None:
+      # Now `old_axis` contains the `char` of the copy node so
+      # we can use `copy_output` to find the old edge to connect with
+      new_node[new_axis] ^ copy_output[old_axis]
+    else:
+      edge.update_axis(old_node=old_node,
+                       old_axis=old_axis,
+                       new_axis=new_axis,
+                       new_node=new_node)
+      new_node.add_edge(edge, new_axis)
 
   net.nodes_set.remove(node1)
   net.nodes_set.remove(node2)
