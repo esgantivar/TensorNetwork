@@ -123,66 +123,57 @@ def contract_between_with_copies(
     # No need to implement this since trace edges are handled seperately
     # in opt_einsum contractors
     raise NotImplementedError
-  for copy in set(shared_copies):
-    if len(copy.edges) == 2:
-      shared_copies.remove(copy)
-      _, broken_edges = net.remove_node(copy)
-      broken_edges[0] ^ broken_edges[1]
-    elif len(copy.edges) != 3:
-      raise NotImplementedError("Copy node {} has {} edges and cannot be "
-                                "contracted.".format(copy, len(copy.edges)))
-  if not shared_copies:
-    return node1 @ node2
 
   _VALID_SUBSCRIPTS = iter(
       'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
 
-  edge_char = {} # Dict: Edge -> einsum char
-  node1_expr, output_expr = [], []
-  # required to update edges: List[Tuple[Edge, old_node, old_axis]
-  output_edges = []
+  for copy in set(shared_copies):
+    if len(copy.edges) == 2:
+      _, broken_edges = net.remove_node(copy)
+      shared_copies.remove(copy)
+      broken_edges[0] ^ broken_edges[1]
+    elif len(copy.edges) != 3:
+      raise ValueError
+
+  copy_edges = {}
+  edge_map = {} # for mapping edges to einsum characters
+  copy_edge_map = {} # for updating edges in the end
+  for copy in shared_copies:
+    for edge in copy.edges:
+      edge_nodes = {edge.node1, edge.node2}
+      if node1 not in edge_nodes and node2 not in edge_nodes:
+        copy_edge = edge
+        break
+    copy_edges.update({edge: copy_edge for edge in copy.edges})
+    edge_map[copy_edge] = next(_VALID_SUBSCRIPTS)
+    old_axis = edge.axis1 if edge.node1 is copy else edge.axis2
+    copy_edge_map[copy_edge] = (copy, old_axis)
+    net.remove_node(copy)
+
+  node1_expr = []
+  output_expr, output_edges = [], []
   for edge in node1.edges:
-    char = next(_VALID_SUBSCRIPTS)
-    node1_expr.append(char)
-    # Find neighbor
-    if edge.node1 is node1:
-      old_axis = edge.axis1
-      neighbor = edge.node2
-    else:
-      assert edge.node2 is node1
-      old_axis = edge.axis2
-      neighbor = edge.node1
-
-    # Map edge to einsum char
-    if neighbor is node2:
-      edge_char[edge] = char
-
-    elif neighbor in shared_copies:
-      assert len(neighbor.edges) == 3
-      for copy_edge in set(neighbor.edges):
-        if node1 in {copy_edge.node1, copy_edge.node2}:
-          net.disconnect(copy_edge)
-        elif node2 is copy_edge.node1:
-          copy_edge, _ = net.disconnect(copy_edge)
-          edge_char[copy_edge] = char
-        elif node2 is copy_edge.node2:
-          _, copy_edge = net.disconnect(copy_edge)
-          edge_char[copy_edge] = char
-        else:
-          nodes = {copy_edge.node1, copy}
-          assert node1 not in nodes
-          assert node2 not in nodes
-          output_expr.append(char)
-          output_edges.append((copy_edge, neighbor, old_axis))
-
-    else:
+    if edge in copy_edges:
+      char = edge_map[copy_edges[edge]]
+      node1_expr.append(char)
       output_expr.append(char)
-      output_edges.append((edge, node1, old_axis))
+      output_edges.append((edge,) + copy_edge_map[copy_edges[edge]])
+    else:
+      char = next(_VALID_SUBSCRIPTS)
+      node1_expr.append(char)
+      if edge.node1 is node2 or edge.node2 is node2:
+        edge_map[edge] = char
+      else:
+        output_expr.append(char)
+        old_axis = edge.axis1 if edge.node1 is node1 else edge.axis2
+        output_edges.append((edge, node1, old_axis))
 
   node2_expr = []
   for edge in node2.edges:
-    if edge in edge_char:
-      node2_expr.append(edge_char[edge])
+    if edge in edge_map:
+      node2_expr.append(edge_map[edge])
+    elif edge in copy_edges:
+      node2_expr.append(edge_map[copy_edges[edge]])
     else:
       char = next(_VALID_SUBSCRIPTS)
       node2_expr.append(char)
@@ -202,9 +193,6 @@ def contract_between_with_copies(
                      new_axis=new_axis,
                      new_node=new_node)
     new_node.add_edge(edge, new_axis)
-    if old_node in shared_copies:
-      shared_copies.remove(old_node)
-      net.remove_node(old_node)
 
   net.nodes_set.remove(node1)
   net.nodes_set.remove(node2)
