@@ -14,7 +14,6 @@
 """Contractors based on `opt_einsum`'s path algorithms."""
 
 import functools
-import operator
 import opt_einsum
 from tensornetwork import network
 from tensornetwork import network_components
@@ -52,7 +51,7 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
   # TODO: Handle the case of connected copy nodes
   # Fuse them before you start contracting
 
-  copy_neighbors, _, edge_map = utils.find_copy_nodes(net)
+  copy_neighbors, edge_map = utils.find_copy_nodes(net)
   nodes = sorted(net.nodes_set - set(copy_neighbors),
                  key = lambda n: n.signature)
 

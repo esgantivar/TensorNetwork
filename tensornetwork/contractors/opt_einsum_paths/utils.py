@@ -28,35 +28,37 @@ def multi_remove(elems: List[Any], indices: List[int]) -> List[Any]:
 
 def find_copy_nodes(net: network.TensorNetwork) -> Tuple[
     Dict[network_components.CopyNode, network_components.Node],
-    Dict[network_components.Node, network_components.CopyNode],
     Dict[network_components.Edge, network_components.Edge]]:
-  # TODO: Docstring
+  """Finds copy nodes and their normal node neighbors.
+
+  Args:
+    net: TensorNetwork that we want to contract.
+
+  Returns:
+    copy_neighbors: Dictionary that maps each copy node to a set that
+      contains all its normal node neighbors.
+    edge_map: Dictionary that maps each edge of a copy node to a specific
+      representative edge of this copy node.
+      This is used because in einsum string notation, the edges of a copy node
+      are all equivalent and correspond to the same character.
+  """
   edge_map = {} # Maps all non-dangling edges of a copy node to a specific
                 # non-dangling edge of this copy node
   copy_neighbors = {} # Maps nodes to their copy node neighbors
-  node_neighbors = {node: set() for node in net.nodes_set} # Maps copy nodes to their node neighbors
-
   for copy in net.nodes_set:
     if isinstance(copy, network_components.CopyNode):
-      node_neighbors.pop(copy)
       copy_neighbors[copy] = set()
       representative_edge = None
       for edge in copy.edges:
         if not edge.is_dangling():
-
           # Update `edge_map`
           if representative_edge is None:
             representative_edge = edge
           edge_map[edge] = representative_edge
-
           # Update `neighbors_of_copy`
-          node = ({edge.node1, edge.node2} - {copy}).pop()
+          node = edge.node1 if edge.node2 is copy else edge.node2
           copy_neighbors[copy].add(node)
-
-          # Update `copy_neighbors_of`
-          node_neighbors[node].add(copy)
-
-  return copy_neighbors, node_neighbors, edge_map
+  return copy_neighbors, edge_map
 
 
 def find_copy_neighbors(net: network.TensorNetwork,
@@ -75,6 +77,7 @@ def find_copy_neighbors(net: network.TensorNetwork,
 def disconnect_copy_edge(net: network.TensorNetwork,
                          edge: network_components.Edge,
                          node: network_components.BaseNode):
+  # TODO: Docstring
   edge_node, edge_copy = net.disconnect(edge)
   if edge_node.node1 is not node:
     assert edge_copy.node1 is node
@@ -87,6 +90,7 @@ def isolate_copy_node(net: network.TensorNetwork,
                       node1: network_components.BaseNode,
                       node2: network_components.BaseNode
                       ) -> network_components.CopyNode:
+  # TODO: Docstring
   # Find shared edges
   edges1 = set(edge for edge in copy.edges if node1 in {edge.node1, edge.node2})
   edges2 = set(edge for edge in copy.edges if node2 in {edge.node1, edge.node2})
@@ -109,6 +113,7 @@ def isolate_copy_node(net: network.TensorNetwork,
 
 
 def contract_between_with_copies(net, node1, node2, copies):
+  # TODO: Docstring
   new_node = None
   for copy in copies:
     n = len(copy.edges)

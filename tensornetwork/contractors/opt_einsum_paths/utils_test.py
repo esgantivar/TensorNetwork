@@ -31,13 +31,10 @@ def test_find_copy_nodes(backend):
   b[0] ^ cn2[0]
   c[0] ^ a[1]
   c[1] ^ cn2[1]
-  copy_neighbors, node_neighbors, edge_map = utils.find_copy_nodes(net)
+  copy_neighbors, edge_map = utils.find_copy_nodes(net)
 
   assert copy_neighbors[cn1] == {a}
   assert copy_neighbors[cn2] == {b, c}
-  assert node_neighbors[a] == {cn1}
-  assert node_neighbors[b] == {cn2}
-  assert node_neighbors[c] == {cn2}
 
   edge_map_set = set(edge_map[edge] for edge in cn1.edges
                      if not edge.is_dangling())
