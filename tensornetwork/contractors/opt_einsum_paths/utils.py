@@ -112,23 +112,105 @@ def isolate_copy_node(net: network.TensorNetwork,
   return new_copy
 
 
-def contract_between_with_copies(net, node1, node2, copies):
+def contract_between_with_copies(
+    net: network.TensorNetwork,
+    node1: network_components.BaseNode,
+    node2: network_components.BaseNode,
+    shared_copies: Set[network_components.CopyNode]
+    ) -> network_components.BaseNode:
   # TODO: Docstring
-  new_node = None
-  for copy in copies:
-    n = len(copy.edges)
-    if n == 2:
+  if node1 is node2:
+    # No need to implement this since trace edges are handled seperately
+    # in opt_einsum contractors
+    raise NotImplementedError
+  for copy in set(shared_copies):
+    if len(copy.edges) == 2:
+      shared_copies.remove(copy)
       _, broken_edges = net.remove_node(copy)
       broken_edges[0] ^ broken_edges[1]
-    elif n == 3:
-      # TODO: Fix the implementation of this
-      new_node = net.contract_copy_node(copy)
-    else:
-      raise NotImplementedError("Cannot contract with copies node {} "
-                                "that has {} edges".format(copy, n))
-  if new_node is None:
+    elif len(copy.edges) != 3:
+      raise NotImplementedError("Copy node {} has {} edges and cannot be "
+                                "contracted.".format(copy, len(copy.edges)))
+  if not shared_copies:
     return node1 @ node2
-  return new_node @ new_node
+
+  _VALID_SUBSCRIPTS = iter(
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+
+  edge_char = {} # Dict: Edge -> einsum char
+  node1_expr, output_expr = [], []
+  # required to update edges: List[Tuple[Edge, old_node, old_axis]
+  output_edges = []
+  for edge in node1.edges:
+    char = next(_VALID_SUBSCRIPTS)
+    node1_expr.append(char)
+    # Find neighbor
+    if edge.node1 is node1:
+      old_axis = edge.axis1
+      neighbor = edge.node2
+    else:
+      assert edge.node2 is node1
+      old_axis = edge.axis2
+      neighbor = edge.node1
+
+    # Map edge to einsum char
+    if neighbor is node2:
+      edge_char[edge] = char
+
+    elif neighbor in shared_copies:
+      assert len(neighbor.edges) == 3
+      for copy_edge in set(neighbor.edges):
+        if node1 in {copy_edge.node1, copy_edge.node2}:
+          net.disconnect(copy_edge)
+        elif node2 is copy_edge.node1:
+          copy_edge, _ = net.disconnect(copy_edge)
+          edge_char[copy_edge] = char
+        elif node2 is copy_edge.node2:
+          _, copy_edge = net.disconnect(copy_edge)
+          edge_char[copy_edge] = char
+        else:
+          nodes = {copy_edge.node1, copy}
+          assert node1 not in nodes
+          assert node2 not in nodes
+          output_expr.append(char)
+          output_edges.append((copy_edge, neighbor, old_axis))
+
+    else:
+      output_expr.append(char)
+      output_edges.append((edge, node1, old_axis))
+
+  node2_expr = []
+  for edge in node2.edges:
+    if edge in edge_char:
+      node2_expr.append(edge_char[edge])
+    else:
+      char = next(_VALID_SUBSCRIPTS)
+      node2_expr.append(char)
+      output_expr.append(char)
+      old_axis = edge.axis1 if edge.node1 is node2 else edge.axis2
+      output_edges.append((edge, node2, old_axis))
+
+  input_expr = ",".join(["".join(node1_expr), "".join(node2_expr)])
+  einsum_expr = "->".join([input_expr, "".join(output_expr)])
+  new_tensor = net.backend.einsum(einsum_expr, node1.tensor, node2.tensor)
+  new_node = net.add_node(new_tensor)
+  # The uncontracted axes of node1 (node2) now correspond to the first (last)
+  # axes of new_node.
+  for new_axis, (edge, old_node, old_axis) in enumerate(output_edges):
+    edge.update_axis(old_node=old_node,
+                     old_axis=old_axis,
+                     new_axis=new_axis,
+                     new_node=new_node)
+    new_node.add_edge(edge, new_axis)
+    if old_node in shared_copies:
+      shared_copies.remove(old_node)
+      net.remove_node(old_node)
+
+  net.nodes_set.remove(node1)
+  net.nodes_set.remove(node2)
+  node1.disable()
+  node2.disable()
+  return new_node
 
 
 def get_path(net: network.TensorNetwork, algorithm: Algorithm,
