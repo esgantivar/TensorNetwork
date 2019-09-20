@@ -59,6 +59,19 @@ def find_copy_nodes(net: network.TensorNetwork) -> Tuple[
   return copy_neighbors, node_neighbors, edge_map
 
 
+def find_copy_neighbors(net: network.TensorNetwork,
+                        node: network_components.BaseNode
+                        ) -> Set[network_components.CopyNode]:
+  """Finds all the copy nodes connected to a node."""
+  copies = set()
+  for edge in node.edges:
+    if not edge.is_dangling():
+      neighbor = edge.node2 if edge.node1 is node else edge.node1
+      if isinstance(neighbor, network_components.CopyNode):
+        copies.add(neighbor)
+  return copies
+
+
 def disconnect_copy_edge(net: network.TensorNetwork,
                          edge: network_components.Edge,
                          node: network_components.BaseNode):

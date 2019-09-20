@@ -52,8 +52,8 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
   # TODO: Handle the case of connected copy nodes
   # Fuse them before you start contracting
 
-  copy_neighbors, node_neighbors, edge_map = utils.find_copy_nodes(net)
-  nodes = sorted(net.nodes_set - set(copy_neighbors.keys()),
+  copy_neighbors, _, edge_map = utils.find_copy_nodes(net)
+  nodes = sorted(net.nodes_set - set(copy_neighbors),
                  key = lambda n: n.signature)
 
   # TODO: Fix creating multiple copy legs in the same node as it leads to
@@ -63,20 +63,14 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
   path = utils.get_path(net, algorithm, nodes, edge_map)
   for a, b in path:
     # Check if the two nodes share copy nodes
-    copies_of_a = node_neighbors.pop(nodes[a])
-    copies_of_b = node_neighbors.pop(nodes[b])
-    shared_copies = copies_of_a & copies_of_b
-
-    copies_to_contract = set()
-    for copy in shared_copies:
-      for pnode in copy_neighbors[copy]: print(pnode, end=",")
-      print()
-      print(nodes[a], nodes[b])
+    copies_of_a = utils.find_copy_neighbors(net, nodes[a])
+    copies_of_b = utils.find_copy_neighbors(net, nodes[b])
+    shared_copies = set()
+    for copy in copies_of_a & copies_of_b:
       # contract copy node
       if (copy_neighbors[copy] == {nodes[a], nodes[b]} and
           len(copy.edges) <= len(copy.get_all_nondangling()) + 1):
-        print("remove", a, b)
-        copies_to_contract.add(copy)
+        shared_copies.add(copy)
         # this copy will be contracted so remove it from maps
         copies_of_a.remove(copy)
         copies_of_b.remove(copy)
@@ -84,16 +78,11 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
       else:
         # isolate the part of the copy node that is connected to the current
         # nodes and add this to `dangling_copies`
-        #print("isolate", a, b)
-        copies_to_contract.add(
+        shared_copies.add(
             utils.isolate_copy_node(net, copy, nodes[a], nodes[b]))
 
-    if shared_copies:
-      new_node = utils.contract_between_with_copies(net, nodes[a], nodes[b],
-                                                    copies_to_contract)
-    else:
-      new_node = nodes[a] @ nodes[b]
-
+    new_node = utils.contract_between_with_copies(net, nodes[a], nodes[b],
+                                                  shared_copies)
     # Update `copy_neighbors`
     for copy in copies_of_a:
       copy_neighbors[copy].remove(nodes[a])
@@ -101,8 +90,6 @@ def base(net: network.TensorNetwork, algorithm: utils.Algorithm,
     for copy in copies_of_b:
       copy_neighbors[copy].remove(nodes[b])
       copy_neighbors[copy].add(new_node)
-    # Update `node_neighbors`
-    node_neighbors[new_node] = copies_of_a | copies_of_b
     # Update `nodes`
     nodes.append(new_node)
     nodes = utils.multi_remove(nodes, [a, b])
