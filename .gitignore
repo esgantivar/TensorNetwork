@@ -37,3 +37,7 @@ coverage.xml
 
 # Max OS
 .DS_Store
+
+
+venv/
+.idea/

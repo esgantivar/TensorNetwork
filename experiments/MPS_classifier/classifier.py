@@ -214,6 +214,5 @@ class MatrixProductState:
       logits: flx prediction as returned from self.flx method.
     """
     logits = self.flx(data)
-    loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits_v2(labels,
-                                                                    logits))
+    loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(labels, logits))
     return loss, logits
